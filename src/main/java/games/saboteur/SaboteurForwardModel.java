@@ -7,8 +7,10 @@ import core.actions.DoNothing;
 import core.components.Deck;
 import core.components.PartialObservableDeck;
 import core.components.PartialObservableGridBoard;
+import core.interfaces.ITreeActionSpace;
 import games.saboteur.actions.*;
 import games.saboteur.components.*;
+import utilities.ActionTreeNode;
 import utilities.Pair;
 import utilities.Vector2D;
 
@@ -21,7 +23,7 @@ import static core.CoreConstants.VisibilityMode.VISIBLE_TO_OWNER;
 import static games.saboteur.components.ActionCard.ActionCardType.*;
 import static games.saboteur.components.RoleCard.RoleCardType.Saboteur;
 
-public class SaboteurForwardModel extends StandardForwardModel {
+public class SaboteurForwardModel extends StandardForwardModel implements ITreeActionSpace {
 
     //region Setup Functions
     @Override
@@ -70,11 +72,15 @@ public class SaboteurForwardModel extends StandardForwardModel {
         int verticalSize = (sgp.goalSpacingY + 1) * sgp.nGoals + sgp.verticalPadding * 2;
         int horizontalSize = sgp.goalSpacingX + 2 + sgp.horizontalPadding * 2;
 
-        sgs.gridBoard = new PartialObservableGridBoard(horizontalSize, verticalSize, sgs.getNPlayers(), true);
+        // Cells start hidden; Start is revealed below, Goals stay face-down until Map/path-reveal.
+        sgs.gridBoard = new PartialObservableGridBoard(horizontalSize, verticalSize, sgs.getNPlayers(), false);
 
         sgs.startingSquare = new Vector2D(sgp.horizontalPadding, verticalSize / 2); // we start just in on the left edge, and half way down vertically
 
         sgs.gridBoard.setElement(sgs.startingSquare.getX(), sgs.startingSquare.getY(), new PathCard(PathCard.PathCardType.Start, new boolean[]{true, true, true, true}));
+        for (int p = 0; p < sgs.getNPlayers(); p++) {
+            sgs.gridBoard.setElementVisibility(sgs.startingSquare.getX(), sgs.startingSquare.getY(), p, true);
+        }
         sgs.nuggetDeck = new Deck<>("NuggetDeck", HIDDEN_TO_ALL);
         for (int goldValue = 0; goldValue < sgp.goldSupply.length; goldValue++) {
             for (int i = 0; i < sgp.goldSupply[goldValue]; i++) {
@@ -83,6 +89,10 @@ public class SaboteurForwardModel extends StandardForwardModel {
         }
         sgs.nuggetDeck.shuffle(sgs.getRnd());
         setupPlayerDecks(sgs);
+
+        sgs.lastRoundResolved = false;
+        sgs.lastRoundMinersWon = false;
+        Arrays.fill(sgs.minersWinByRound, false);
 
         setupRound(sgs, sgp);
     }
@@ -142,7 +152,12 @@ public class SaboteurForwardModel extends StandardForwardModel {
 
         for (SaboteurCard goalCard : sgs.goalDeck.getComponents()) {
             PathCard currentCard = (PathCard) goalCard;
-            sgs.gridBoard.setElement(sgp.goalSpacingX + sgs.startingSquare.getX(), startingY, currentCard);
+            int goalX = sgp.goalSpacingX + sgs.startingSquare.getX();
+            sgs.gridBoard.setElement(goalX, startingY, currentCard);
+            // Goals are face-down until revealed by a Map card or path connectivity
+            for (int p = 0; p < sgs.getNPlayers(); p++) {
+                sgs.gridBoard.setElementVisibility(goalX, startingY, p, false);
+            }
             startingY += (sgp.goalSpacingY + 1);
         }
     }
@@ -473,13 +488,16 @@ public class SaboteurForwardModel extends StandardForwardModel {
             }
         }
 
-        if (sgs.getRoundCounter() > 1) {
+        sgs.minersWinByRound[sgs.getRoundCounter()] = true;
+        sgs.lastRoundMinersWon = true;
+        sgs.lastRoundResolved = true;
+        SaboteurGameParameters sgp = (SaboteurGameParameters) sgs.getGameParameters();
+        if (sgp.singleRoundEpisode || sgs.getRoundCounter() > 1) {
             endGame(sgs);
             return;
         }
-        sgs.minersWinByRound[sgs.getRoundCounter()] = true;
         endRound(sgs);
-        setupRound(sgs, (SaboteurGameParameters) sgs.getGameParameters());
+        setupRound(sgs, sgp);
     }
 
     //Distribute earnings for all saboteurs
@@ -503,13 +521,16 @@ public class SaboteurForwardModel extends StandardForwardModel {
             giveSaboteurGold(sgs, targetNuggetValue, player);
 
         }
-        if (sgs.getRoundCounter() > 2) {
+        sgs.minersWinByRound[sgs.getRoundCounter()] = false;
+        sgs.lastRoundMinersWon = false;
+        sgs.lastRoundResolved = true;
+        SaboteurGameParameters sgp = (SaboteurGameParameters) sgs.getGameParameters();
+        if (sgp.singleRoundEpisode || sgs.getRoundCounter() > 2) {
             endGame(sgs);
             return;
         }
-        sgs.minersWinByRound[sgs.getRoundCounter()] = false;
         endRound(sgs);
-        setupRound(sgs, (SaboteurGameParameters) sgs.getGameParameters());
+        setupRound(sgs, sgp);
     }
 
     private boolean nuggetExists(SaboteurGameState sgs, int targetValue) {
@@ -520,6 +541,153 @@ public class SaboteurForwardModel extends StandardForwardModel {
         }
         return false;
     }
+
+    //region Action Tree (PyTAG)
+    /*
+     * PyTAG needs a FIXED-shape discrete action space. Saboteur's legal actions vary turn to turn
+     * (hand contents, board state), so we instead build a tree whose SHAPE only depends on things
+     * that never change once the game starts: hand size for this player count, grid dimensions,
+     * number of players and number of goal cards. Availability (which leaves are legal right now)
+     * is refreshed every turn in updateActionTree() by re-running _computeAvailableActions() and
+     * mapping each returned action onto its corresponding leaf.
+     *
+     * Branches (by action type), sized using SaboteurGameParameters / the already-built grid:
+     *   place    -> handSlot (0..H-1) -> x (0..W-1) -> y (0..Hg-1) -> rotated (r0/r1)
+     *   tool     -> handSlot (0..H-1) -> targetPlayer (0..N-1) -> toolType (Pickaxe/Lantern/MineCart)
+     *   map      -> goalSlot (0..nGoals-1)          [Map only ever reveals one of the fixed goal cells]
+     *   rockfall -> x (0..W-1) -> y (0..Hg-1)        [any path/edge cell on the board can be targeted]
+     *   pass     -> handSlot (0..H-1)
+     *   doNothing (fallback for the rare case of an empty hand)
+     */
+    @Override
+    public ActionTreeNode initActionTree(AbstractGameState gameState) {
+        SaboteurGameState sgs = (SaboteurGameState) gameState;
+        SaboteurGameParameters sgp = (SaboteurGameParameters) sgs.getGameParameters();
+
+        int handSize = sgp.cardsPerPlayer[sgs.getNPlayers()];
+        int nPlayers = sgs.getNPlayers();
+        PartialObservableGridBoard gridBoard = sgs.getGridBoard();
+        int width = gridBoard.getWidth();
+        int height = gridBoard.getHeight();
+        int nGoals = sgp.nGoals;
+
+        ActionTreeNode root = new ActionTreeNode(0, "root");
+
+        ActionTreeNode place = root.addChild(0, "place");
+        for (int h = 0; h < handSize; h++) {
+            ActionTreeNode handNode = place.addChild(0, "h" + h);
+            for (int x = 0; x < width; x++) {
+                ActionTreeNode xNode = handNode.addChild(0, "x" + x);
+                for (int y = 0; y < height; y++) {
+                    ActionTreeNode yNode = xNode.addChild(0, "y" + y);
+                    yNode.addChild(0, "r0");
+                    yNode.addChild(0, "r1");
+                }
+            }
+        }
+
+        ActionTreeNode tool = root.addChild(0, "tool");
+        for (int h = 0; h < handSize; h++) {
+            ActionTreeNode handNode = tool.addChild(0, "h" + h);
+            for (int p = 0; p < nPlayers; p++) {
+                ActionTreeNode targetNode = handNode.addChild(0, "target" + p);
+                for (ActionCard.ToolCardType type : ActionCard.ToolCardType.values()) {
+                    targetNode.addChild(0, type.name());
+                }
+            }
+        }
+
+        ActionTreeNode map = root.addChild(0, "map");
+        for (int g = 0; g < nGoals; g++) {
+            map.addChild(0, "g" + g);
+        }
+
+        ActionTreeNode rockfall = root.addChild(0, "rockfall");
+        for (int x = 0; x < width; x++) {
+            ActionTreeNode xNode = rockfall.addChild(0, "x" + x);
+            for (int y = 0; y < height; y++) {
+                xNode.addChild(0, "y" + y);
+            }
+        }
+
+        ActionTreeNode pass = root.addChild(0, "pass");
+        for (int h = 0; h < handSize; h++) {
+            pass.addChild(0, "h" + h);
+        }
+
+        root.addChild(0, "doNothing");
+
+        return root;
+    }
+
+    @Override
+    public ActionTreeNode updateActionTree(ActionTreeNode root, AbstractGameState gameState) {
+        root.resetTree();
+        SaboteurGameState sgs = (SaboteurGameState) gameState;
+        Deck<SaboteurCard> hand = sgs.getPlayerDecks().get(sgs.getCurrentPlayer());
+
+        ActionTreeNode placeRoot = root.findChildrenByName("place");
+        ActionTreeNode toolRoot = root.findChildrenByName("tool");
+        ActionTreeNode mapRoot = root.findChildrenByName("map");
+        ActionTreeNode rockfallRoot = root.findChildrenByName("rockfall");
+        ActionTreeNode passRoot = root.findChildrenByName("pass");
+
+        List<Vector2D> goalPositions = getGoalPositions(sgs);
+
+        for (AbstractAction action : computeAvailableActions(gameState)) {
+            if (action instanceof PlacePathCard a) {
+                int handIdx = handIndexOf(hand, a.getValueID());
+                placeRoot.findChildrenByName("h" + handIdx)
+                        .findChildrenByName("x" + a.getX())
+                        .findChildrenByName("y" + a.getY())
+                        .findChildrenByName(a.isRotated() ? "r1" : "r0")
+                        .setAction(action);
+            } else if (action instanceof PlayToolCard a) {
+                toolRoot.findChildrenByName("h" + a.getCardIdx())
+                        .findChildrenByName("target" + a.getTargetPlayer())
+                        .findChildrenByName(a.getToolType().name())
+                        .setAction(action);
+            } else if (action instanceof PlayMapCard a) {
+                int goalIdx = goalPositions.indexOf(a.getPosition());
+                mapRoot.findChildrenByName("g" + goalIdx).setAction(action);
+            } else if (action instanceof PlayRockFallCard a) {
+                rockfallRoot.findChildrenByName("x" + a.getX())
+                        .findChildrenByName("y" + a.getY())
+                        .setAction(action);
+            } else if (action instanceof Pass a) {
+                passRoot.findChildrenByName("h" + a.getCardIdx()).setAction(action);
+            } else if (action instanceof DoNothing) {
+                root.findChildrenByName("doNothing").setAction(action);
+            } else {
+                throw new AssertionError("Unexpected action type in Saboteur action tree: " + action.getClass());
+            }
+        }
+        return root;
+    }
+
+    // Goal cells never move once the board is built (their layout only depends on fixed game
+    // parameters), so scanning for them gives a stable ordering to index them by across the game.
+    private List<Vector2D> getGoalPositions(SaboteurGameState sgs) {
+        List<Vector2D> goals = new ArrayList<>();
+        PartialObservableGridBoard gridBoard = sgs.getGridBoard();
+        for (int y = 0; y < gridBoard.getHeight(); y++) {
+            for (int x = 0; x < gridBoard.getWidth(); x++) {
+                PathCard card = (PathCard) gridBoard.getElement(x, y);
+                if (card != null && card.type == PathCard.PathCardType.Goal) {
+                    goals.add(new Vector2D(x, y));
+                }
+            }
+        }
+        return goals;
+    }
+
+    private int handIndexOf(Deck<SaboteurCard> hand, int componentId) {
+        for (int i = 0; i < hand.getSize(); i++) {
+            if (hand.peek(i).getComponentID() == componentId) return i;
+        }
+        throw new AssertionError("Could not find card " + componentId + " in hand while building action tree");
+    }
+    //endregion
 
     private void giveSaboteurGold(SaboteurGameState sgs, int targetValue, int currentPlayer) {
         Deck<SaboteurCard> currentNuggetDeck = sgs.playerNuggetDecks.get(currentPlayer);

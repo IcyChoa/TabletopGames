@@ -19,6 +19,10 @@ public class PlacePathCard extends SetGridValueAction
         this.rotated = rotated;
     }
 
+    public boolean isRotated() {
+        return rotated;
+    }
+
     @Override
     public boolean execute(AbstractGameState gs) {
         SaboteurGameState sgs = (SaboteurGameState) gs;
@@ -28,6 +32,10 @@ public class PlacePathCard extends SetGridValueAction
             pathCard.rotate();
         }
         sgs.getGridBoard().setElement(getX(), getY(), pathCard);
+        // Placed path/edge cards are public to all players
+        for (int p = 0; p < sgs.getNPlayers(); p++) {
+            sgs.getGridBoard().setElementVisibility(getX(), getY(), p, true);
+        }
         sgs.getPathCardOptions().remove(new Vector2D(getX(), getY()));
 
         Deck<SaboteurCard> currentDeck = sgs.getPlayerDecks().get(sgs.getCurrentPlayer());

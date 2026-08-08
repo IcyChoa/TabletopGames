@@ -26,6 +26,9 @@ public class SaboteurGameState extends AbstractGameState {
     Deck<SaboteurCard> nuggetDeck;
 
     boolean[] minersWinByRound = new boolean[3]; // track if miners win each of the 3 rounds
+    /** Outcome of the most recently completed round (for RL team rewards). */
+    boolean lastRoundMinersWon = false;
+    boolean lastRoundResolved = false;
 
     Set<Vector2D> pathCardOptions;
     Set<Vector2D> goalLocationsFound;
@@ -92,6 +95,8 @@ public class SaboteurGameState extends AbstractGameState {
         copy.nuggetDeck = nuggetDeck.copy();
         copy.drawDeck = drawDeck.copy();
         copy.minersWinByRound = Arrays.copyOf(minersWinByRound, minersWinByRound.length);
+        copy.lastRoundMinersWon = lastRoundMinersWon;
+        copy.lastRoundResolved = lastRoundResolved;
 
         // Board
         copy.gridBoard = gridBoard.emptyCopy();
@@ -252,6 +257,19 @@ public class SaboteurGameState extends AbstractGameState {
         return ((RoleCard) roleDeck.peek(playerId)).type;
     }
 
+    public boolean isLastRoundResolved() {
+        return lastRoundResolved;
+    }
+
+    /** True if the most recently completed round was a miner win. Meaningful when {@link #isLastRoundResolved()}. */
+    public boolean didMinersWinLastRound() {
+        return lastRoundMinersWon;
+    }
+
+    public boolean[] getMinersWinByRound() {
+        return minersWinByRound;
+    }
+
     public List<Map<ActionCard.ToolCardType, Boolean>> getToolDeck() {
         return toolDeck;
     }
@@ -297,6 +315,8 @@ public class SaboteurGameState extends AbstractGameState {
                 nOfMiners == that.nOfMiners &&
                 nOfSaboteurs == that.nOfSaboteurs &&
                 Arrays.equals(minersWinByRound, that.minersWinByRound) &&
+                lastRoundMinersWon == that.lastRoundMinersWon &&
+                lastRoundResolved == that.lastRoundResolved &&
                 Objects.equals(goalLocationsFound, that.goalLocationsFound) &&
                 Objects.equals(playerDecks, that.playerDecks) &&
                 Objects.equals(toolDeck, that.toolDeck) &&

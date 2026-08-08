@@ -14,52 +14,46 @@ public class PartialObservableGridBoard extends GridBoard
     public PartialObservableGridBoard(int width, int height, int nPlayers, boolean defaultValue)
     {
         super(width, height);
-
-        //filling Visibility for each cell in grid
-        boolean[][] visibilityGrid = new boolean[height][width];
-        for(int i = 0; i < height; i++)
-        {
-            Arrays.fill(visibilityGrid[i], defaultValue);
-        }
-        for(int i = 0; i < nPlayers; i++)
-        {
-            elementVisibility.add(visibilityGrid);
-        }
-
-        //filling Visibility of overall grid for each player
-        gridBoardVisibility = new boolean[nPlayers];
-        Arrays.fill(gridBoardVisibility, defaultValue);
+        initVisibility(width, height, nPlayers, defaultValue);
     }
 
     private PartialObservableGridBoard(int width, int height, int nPlayers, boolean defaultValue, int componentID)
     {
         super(width, height, componentID);
-
-        //filling Visibility for each cell in grid
-        boolean[][] visibilityGrid = new boolean[height][width];
-        for(int i = 0; i < height; i++)
-        {
-            Arrays.fill(visibilityGrid[i], defaultValue);
-        }
-        for(int i = 0; i < nPlayers; i++)
-        {
-            elementVisibility.add(visibilityGrid);
-        }
-
-        //filling Visibility of overall grid for each player
-        gridBoardVisibility = new boolean[nPlayers];
-        Arrays.fill(gridBoardVisibility, defaultValue);
+        initVisibility(width, height, nPlayers, defaultValue);
     }
 
     private PartialObservableGridBoard(BoardNode[][] grid, boolean[] gridBoardVisibility, List<boolean[][]> elementVisibility, int componentID)
     {
         super(grid, componentID);
         this.gridBoardVisibility = gridBoardVisibility.clone();
-        this.elementVisibility = new ArrayList<>();
-        for(boolean[][] visibility : elementVisibility)
-        {
-            this.elementVisibility.add(visibility.clone());
+        this.elementVisibility = deepCopyVisibility(elementVisibility);
+    }
+
+    /** Each player must own a separate visibility grid; sharing one array leaks Map peeks across players. */
+    private void initVisibility(int width, int height, int nPlayers, boolean defaultValue) {
+        elementVisibility = new ArrayList<>(nPlayers);
+        for (int p = 0; p < nPlayers; p++) {
+            boolean[][] visibilityGrid = new boolean[height][width];
+            for (int i = 0; i < height; i++) {
+                Arrays.fill(visibilityGrid[i], defaultValue);
+            }
+            elementVisibility.add(visibilityGrid);
         }
+        gridBoardVisibility = new boolean[nPlayers];
+        Arrays.fill(gridBoardVisibility, defaultValue);
+    }
+
+    private static List<boolean[][]> deepCopyVisibility(List<boolean[][]> source) {
+        List<boolean[][]> copy = new ArrayList<>(source.size());
+        for (boolean[][] visibility : source) {
+            boolean[][] gridCopy = new boolean[visibility.length][];
+            for (int r = 0; r < visibility.length; r++) {
+                gridCopy[r] = visibility[r].clone();
+            }
+            copy.add(gridCopy);
+        }
+        return copy;
     }
 //endregion
 //--------------------------------------------------------------------------------------------------//
@@ -153,7 +147,8 @@ public class PartialObservableGridBoard extends GridBoard
     }
 
     public PartialObservableGridBoard emptyCopy() {
-        PartialObservableGridBoard g = new PartialObservableGridBoard(getWidth(), getHeight(), elementVisibility.size(), true, componentID);
+        // default hidden; callers that need visibility must copy it from the source state
+        PartialObservableGridBoard g = new PartialObservableGridBoard(getWidth(), getHeight(), elementVisibility.size(), false, componentID);
         copyComponentTo(g);
         return g;
     }

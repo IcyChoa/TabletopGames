@@ -6,6 +6,7 @@ import core.actions.DoNothing;
 import core.interfaces.IStateFeatureVector;
 import core.interfaces.ITreeActionSpace;
 import core.interfaces.IStateFeatureJSON;
+import evaluation.optimisation.TunableParameters;
 import games.GameType;
 import games.diamant.DiamantFeatures;
 import games.loveletter.features.LLStateFeaturesReduced;
@@ -14,6 +15,10 @@ import games.powergrid.PowerGridGameState;
 import games.powergrid.PowerGridParameters;
 import games.powergrid.components.PowerGridCard;
 import games.stratego.StrategoFeatures;
+import games.saboteur.SaboteurFeatures;
+import games.saboteur.SaboteurGameParameters;
+import games.saboteur.SaboteurGameState;
+import games.saboteur.components.RoleCard;
 import games.sushigo.SGFeatures;
 import games.tictactoe.TTTFeatures;
 import org.json.simple.JSONObject;
@@ -40,7 +45,8 @@ enum FeatureExtractors {
     SushiGo(null, SGFeatures.class),
     TicTacToe(TTTFeatures.class, TTTFeatures.class),
     Diamant(DiamantFeatures.class, DiamantFeatures.class),
-	PowerGrid(PowerGridFeatures.class, null); //gets both the JSON and Vector observation 
+	PowerGrid(PowerGridFeatures.class, null), //gets both the JSON and Vector observation
+    Saboteur(SaboteurFeatures.class, null);
     Class<? extends IStateFeatureVector> stateFeatureVector;
     Class<? extends IStateFeatureJSON> stateFeatureJSON;
     FeatureExtractors(Class<? extends IStateFeatureVector> stateFeatureVector, Class<? extends IStateFeatureJSON> stateFeatureJSON) {
@@ -136,6 +142,15 @@ public class PyTAG {
 
         assert game != null;
 
+        // RL training uses one-round team episodes by default for Saboteur.
+        // This goes through the tunable map rather than the field directly: any later
+        // setParameterValue call triggers _reset(), which reloads every field from that
+        // map and would otherwise clear the flag.
+        if (gameToPlay == GameType.Saboteur) {
+            SaboteurGameParameters sgp = (SaboteurGameParameters) game.getGameState().getGameParameters();
+            sgp.setParameterValue("singleRoundEpisode", true);
+        }
+
         if (this.stateVectoriser == null && this.stateJSONiser == null){
             throw new Exception("Game does not implement the state feature vector or JSON interface");
         }
@@ -152,6 +167,23 @@ public class PyTAG {
 //
 //        }
 
+    }
+
+    /**
+     * Set an integer game parameter. Must be called before reset(), since most
+     * parameters are only read while the board is being built.
+     *
+     * For the Saboteur curriculum, goalSpacingX moves the goals closer to the start and
+     * horizontalPadding compensates so the grid keeps its size: the width is
+     * goalSpacingX + 2 + 2 * horizontalPadding, so the observation vector and action
+     * tree stay the same shape across difficulty levels.
+     */
+    public void setGameParameter(String name, int value) {
+        AbstractParameters params = game.getGameState().getGameParameters();
+        if (!(params instanceof TunableParameters)) {
+            throw new IllegalStateException("Game parameters are not tunable: " + params.getClass().getName());
+        }
+        ((TunableParameters<?>) params).setParameterValue(name, value);
     }
 
     // --Wrappers for interface functions--
@@ -368,6 +400,40 @@ public class PyTAG {
 
     public CoreConstants.GameResult[] getPlayerResults(){
         return this.gameState.getPlayerResults();
+    }
+
+    /** Whether the most recently completed Saboteur round was a miner win. */
+    public boolean getSaboteurMinersWon() {
+        SaboteurGameState sgs = (SaboteurGameState) gameState;
+        return sgs.didMinersWinLastRound();
+    }
+
+    public boolean getSaboteurRoundResolved() {
+        SaboteurGameState sgs = (SaboteurGameState) gameState;
+        return sgs.isLastRoundResolved();
+    }
+
+    /** True if the given seat is a Saboteur (from the live/full state). */
+    public boolean getSaboteurIsSaboteur(int playerId) {
+        SaboteurGameState sgs = (SaboteurGameState) gameState;
+        return sgs.getRole(playerId) == RoleCard.RoleCardType.Saboteur;
+    }
+
+    /**
+     * Team reward for a seat after a resolved round: +1 if that seat's team won, -1 otherwise.
+     * Returns 0 if the round has not resolved yet.
+     */
+    public double getSaboteurTeamReward(int playerId) {
+        SaboteurGameState sgs = (SaboteurGameState) gameState;
+        if (!sgs.isLastRoundResolved()) {
+            return 0.0;
+        }
+        boolean isSaboteur = sgs.getRole(playerId) == RoleCard.RoleCardType.Saboteur;
+        boolean minersWon = sgs.didMinersWinLastRound();
+        if (isSaboteur) {
+            return minersWon ? -1.0 : 1.0;
+        }
+        return minersWon ? 1.0 : -1.0;
     }
 
     public int sampleRNDAction(int[] mask, Random rnd){

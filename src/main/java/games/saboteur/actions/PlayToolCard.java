@@ -49,6 +49,14 @@ public class PlayToolCard extends AbstractAction {
         return cardIdx;
     }
 
+    public int getTargetPlayer() {
+        return playerID;
+    }
+
+    public ActionCard.ToolCardType getToolType() {
+        return toolType;
+    }
+
     @Override
     public int hashCode() {
         return Objects.hash(playerID, cardIdx, isFunctional, toolType);

@@ -25,6 +25,8 @@ public class SaboteurGameParameters extends TunableParameters<SaboteurGameParame
     public int nTreasures = 1;
     public int mapCardsInDeck = 6;
     public int rockfallCardsInDeck = 3;
+    /** When true, the match ends after the first round (for RL episodes). Default false preserves standard 3-round play. */
+    public boolean singleRoundEpisode = false;
 
     //map combination of specific cards to number of cards in that deck
     public Map<Pair<PathCard.PathCardType, boolean[]>, Integer> pathCardDeck = new HashMap<>();
@@ -60,6 +62,7 @@ public class SaboteurGameParameters extends TunableParameters<SaboteurGameParame
         addTunableParameter("rockfallCardsInDeck", 3);
         addTunableParameter("horizontalPadding", 2);
         addTunableParameter("verticalPadding", 3);
+        addTunableParameter("singleRoundEpisode", false);
 
         //All Path type cards in a deck excluding goal and start card
         PathCard.PathCardType edge = PathCard.PathCardType.Edge;
@@ -109,6 +112,7 @@ public class SaboteurGameParameters extends TunableParameters<SaboteurGameParame
         rockfallCardsInDeck = (int) getParameterValue("rockfallCardsInDeck");
         horizontalPadding = (int) getParameterValue("horizontalPadding");
         verticalPadding = (int) getParameterValue("verticalPadding");
+        singleRoundEpisode = (boolean) getParameterValue("singleRoundEpisode");
     }
 
     @Override
@@ -124,6 +128,7 @@ public class SaboteurGameParameters extends TunableParameters<SaboteurGameParame
         sgp.toolCards = new HashMap<>();
         for (Map.Entry<Pair<ActionCard.ActionCardType, ActionCard.ToolCardType[]>, Integer> entry : toolCards.entrySet())
             sgp.toolCards.put(new Pair<>(entry.getKey().a, entry.getKey().b.clone()), entry.getValue());
+        sgp.singleRoundEpisode = singleRoundEpisode;
         return sgp;
     }
 
@@ -132,7 +137,8 @@ public class SaboteurGameParameters extends TunableParameters<SaboteurGameParame
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         SaboteurGameParameters that = (SaboteurGameParameters) o;
-        return  Arrays.equals(cardsPerPlayer, that.cardsPerPlayer) &&
+        return singleRoundEpisode == that.singleRoundEpisode &&
+                Arrays.equals(cardsPerPlayer, that.cardsPerPlayer) &&
                 Objects.equals(pathCardDeck, that.pathCardDeck) && Objects.equals(toolCards, that.toolCards) &&
                 Arrays.equals(saboteursForPlayerCount, that.saboteursForPlayerCount) &&
                 Arrays.equals(minersForPlayerCount, that.minersForPlayerCount);
@@ -140,7 +146,7 @@ public class SaboteurGameParameters extends TunableParameters<SaboteurGameParame
 
     @Override
     public int hashCode() {
-        return Objects.hash(pathCardDeck, toolCards, super.hashCode()) +
+        return Objects.hash(pathCardDeck, toolCards, singleRoundEpisode, super.hashCode()) +
                 Arrays.hashCode(saboteursForPlayerCount) + 31 * Arrays.hashCode(minersForPlayerCount) +
                 31 * 31 * Arrays.hashCode(cardsPerPlayer);
     }

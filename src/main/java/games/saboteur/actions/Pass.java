@@ -14,6 +14,10 @@ public class Pass extends AbstractAction
     public Pass(int cardIdx) {
         this.cardIdx = cardIdx;
     }
+
+    public int getCardIdx() {
+        return cardIdx;
+    }
     @Override
     public boolean execute(AbstractGameState gs) {
         SaboteurGameState sgs = (SaboteurGameState) gs;
