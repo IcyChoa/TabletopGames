@@ -48,7 +48,12 @@ public class SaboteurForwardModel extends StandardForwardModel implements ITreeA
 
         sgs.drawDeck = new Deck<>("DrawDeck", HIDDEN_TO_ALL);
         for (Map.Entry<Pair<PathCard.PathCardType, boolean[]>, Integer> entry : sgp.pathCardDeck.entrySet()) {
-            for (int i = 0; i < entry.getValue(); i++) {
+            int count = entry.getValue();
+            // Curriculum: densify only tunnel Path cards; leave Edge dead-ends at base counts.
+            if (entry.getKey().a == PathCard.PathCardType.Path) {
+                count *= Math.max(1, sgp.pathCardMultiplier);
+            }
+            for (int i = 0; i < count; i++) {
                 sgs.drawDeck.add(new PathCard(entry.getKey().a, entry.getKey().b.clone()));
             }
         }
