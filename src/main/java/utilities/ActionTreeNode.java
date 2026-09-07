@@ -52,31 +52,38 @@ public class ActionTreeNode {
         return vals;
     }
 
-    // Searches the tree breadth first for all leaf nodes and returns them
+    /**
+     * Leaves in depth-first (construction) order: nested addChild loops become a
+     * contiguous index block per branch.
+     *
+     * Breadth-first leaf order only matches that for uniform-depth trees (TicTacToe).
+     * Ragged trees (Saboteur place/x/y/rot vs a shallow doNothing) would put grid
+     * cells at the wrong action IDs, so a spatial policy reads the board as scrambled.
+     */
     public List<ActionTreeNode> getLeafNodes(){
-        List<ActionTreeNode> nodes = new ArrayList<ActionTreeNode>();
         List<ActionTreeNode> leafNodes = new ArrayList<ActionTreeNode>();
-        nodes.add(this);
-        while(nodes.size() > 0){
-            ActionTreeNode node = nodes.remove(0);
-            if(node.children.size() == 0){
-                leafNodes.add(node);
-            } else {
-                nodes.addAll(node.children);
-            }
-        }
+        collectLeavesDFS(this, leafNodes);
         return leafNodes;
+    }
+
+    private static void collectLeavesDFS(ActionTreeNode node, List<ActionTreeNode> leafNodes) {
+        if (node.children.isEmpty()) {
+            leafNodes.add(node);
+            return;
+        }
+        for (ActionTreeNode child : node.children) {
+            collectLeavesDFS(child, leafNodes);
+        }
     }
 
     public List<ActionTreeNode> flattenTree(){
         List<ActionTreeNode> nodes = new ArrayList<ActionTreeNode>();
-        List<ActionTreeNode> nodes1 = new ArrayList<ActionTreeNode>();
-        nodes.add(this);
-        nodes1.add(this);
-        while (nodes1.size() > 0) {
-            ActionTreeNode node = nodes1.remove(0);
+        List<ActionTreeNode> queue = new ArrayList<ActionTreeNode>();
+        queue.add(this);
+        while (queue.size() > 0) {
+            ActionTreeNode node = queue.remove(0);
             nodes.add(node);
-            nodes1.addAll(node.children);
+            queue.addAll(node.children);
         }
         return nodes;
     }
@@ -212,8 +219,8 @@ public class ActionTreeNode {
     }
     public AbstractAction getActionByVector(int[] vector){
         ActionTreeNode node = this;
-        for (int i = 0; i < vector.length; i++) {
-            node = node.children.get(i);
+        for (int childIndex : vector) {
+            node = node.children.get(childIndex);
         }
         return node.action;
     }

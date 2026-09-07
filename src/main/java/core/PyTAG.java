@@ -84,7 +84,7 @@ public class PyTAG {
     private Game game;
     // root of the action tree
     private ActionTreeNode root;
-    // list of leaf nodes
+    // Leaves in DFS/construction order (see ActionTreeNode.getLeafNodes). BFS would scramble grid ids.
     private List<ActionTreeNode> leaves;
     private AbstractGameState gameState;
     private AbstractForwardModel forwardModel;
@@ -281,6 +281,7 @@ public class PyTAG {
         AbstractGameState observation = gameState.copy(gameState.getCurrentPlayer());
         this.availableActions = forwardModel.computeAvailableActions(observation);
         this.root = ((ITreeActionSpace)this.forwardModel).updateActionTree(this.root, this.gameState);
+        // DFS leaf order so a flat action id maps to the nested (e.g. x, y) construction path.
         this.leaves = root.getLeafNodes();
     }
 
@@ -385,7 +386,7 @@ public class PyTAG {
         // Compute the updated available actions and the action tree
         this.availableActions = forwardModel.computeAvailableActions(observation);
         this.root = ((ITreeActionSpace)this.forwardModel).updateActionTree(this.root, this.gameState);
-        this.leaves = root.getLeafNodes();
+        this.leaves = root.getLeafNodes(); // DFS; must match Python place/x/y decoding
 
         return observation;
     }
