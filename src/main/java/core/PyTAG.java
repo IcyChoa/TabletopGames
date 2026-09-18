@@ -18,6 +18,7 @@ import games.stratego.StrategoFeatures;
 import games.saboteur.SaboteurFeatures;
 import games.saboteur.SaboteurGameParameters;
 import games.saboteur.SaboteurGameState;
+import games.saboteur.components.PathCard;
 import games.saboteur.components.RoleCard;
 import games.sushigo.SGFeatures;
 import games.tictactoe.TTTFeatures;
@@ -407,6 +408,41 @@ public class PyTAG {
     public boolean getSaboteurMinersWon() {
         SaboteurGameState sgs = (SaboteurGameState) gameState;
         return sgs.didMinersWinLastRound();
+    }
+
+    /**
+     * Per-goal {@code [x, y, isGold, revealed]} packed as a flat int array (4 ints per goal).
+     * Reads the live/full Saboteur state the same way {@link SaboteurFeatures} scans the grid;
+     * a FOW copy would shuffle unseen gold. {@code revealed} is 1 if any seat can see that card.
+     */
+    public int[] getSaboteurGoals() {
+        SaboteurGameState sgs = (SaboteurGameState) gameState;
+        var grid = sgs.getGridBoard();
+        ArrayList<Integer> packed = new ArrayList<>();
+        for (int y = 0; y < grid.getHeight(); y++) {
+            for (int x = 0; x < grid.getWidth(); x++) {
+                PathCard card = (PathCard) grid.getElement(x, y);
+                if (card == null || card.type != PathCard.PathCardType.Goal) {
+                    continue;
+                }
+                boolean revealed = false;
+                for (int p = 0; p < sgs.getNPlayers(); p++) {
+                    if (grid.getElementVisibility(x, y, p)) {
+                        revealed = true;
+                        break;
+                    }
+                }
+                packed.add(x);
+                packed.add(y);
+                packed.add(card.hasTreasure() ? 1 : 0);
+                packed.add(revealed ? 1 : 0);
+            }
+        }
+        int[] out = new int[packed.size()];
+        for (int i = 0; i < packed.size(); i++) {
+            out[i] = packed.get(i);
+        }
+        return out;
     }
 
     public boolean getSaboteurRoundResolved() {

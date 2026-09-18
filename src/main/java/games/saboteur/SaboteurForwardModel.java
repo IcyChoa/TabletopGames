@@ -391,7 +391,8 @@ public class SaboteurForwardModel extends StandardForwardModel implements ITreeA
         //new action to add card onto their BrokenToolDeck
         ArrayList<AbstractAction> actions = new ArrayList<>();
         for (int currentPlayer = 0; currentPlayer < sgs.getNPlayers(); currentPlayer++) {
-            if (currentPlayer == sgs.getCurrentPlayer()) {
+            // BrokenTools cannot sabotage your own tools; FixTools may repair them.
+            if (card.actionType == BrokenTools && currentPlayer == sgs.getCurrentPlayer()) {
                 continue;
             }
             for (ActionCard.ToolCardType type : card.toolTypes) {
