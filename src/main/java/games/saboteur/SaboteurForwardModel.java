@@ -151,6 +151,11 @@ public class SaboteurForwardModel extends StandardForwardModel implements ITreeA
     }
 
     private void resetGoals(SaboteurGameState sgs, SaboteurGameParameters sgp) {
+        // Shuffle first. Deck.add prepends, so construction order is
+        // [empty, empty, gold]; placing that pins gold at the bottom cell.
+        // resetDecks used to shuffle after these cards were already on the board.
+        sgs.goalDeck.shuffle(sgs.getRnd());
+
         int goalCards = sgs.goalDeck.getSize();
         int verticalSpaceNeeded = goalCards * (sgp.goalSpacingY + 1) - 1;
         int startingY = sgs.startingSquare.getY() - verticalSpaceNeeded / 2;
@@ -178,9 +183,8 @@ public class SaboteurForwardModel extends StandardForwardModel implements ITreeA
             sgs.playerDecks.get(i).clear();
         }
 
-        //Shuffle Necessary decks
+        //Shuffle Necessary decks (goals are shuffled in resetGoals, before they are placed)
         sgs.drawDeck.shuffle(sgs.getRnd());
-        sgs.goalDeck.shuffle(sgs.getRnd());
 
         // Assign roles
         sgs.roleDeck.shuffle(sgs.getRnd());
