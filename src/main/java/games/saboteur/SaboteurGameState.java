@@ -200,7 +200,7 @@ public class SaboteurGameState extends AbstractGameState {
                 }
             }
 
-            // Shuffle role deck to hide info. Current player should have same role, and we keep any they know (if Saboteur has played Rockfall)
+            // Shuffle role deck to hide info. Current player should have same role, and we keep any roles already visible to them.
             // DeterminisationUtils will automatically take into account partial observability of the deck
             DeterminisationUtilities.reshuffle(playerId, List.of(copy.roleDeck), i -> true, redeterminisationRnd);
         } else {

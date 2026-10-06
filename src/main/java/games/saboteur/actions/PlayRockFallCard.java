@@ -27,11 +27,7 @@ public class PlayRockFallCard extends SetGridValueAction {
                 break;
             }
         }
-        // reveal identity to all players if they Rockfalled a Path
-        if (deletedCard.type == SaboteurCard.SaboteurCardType.Path) {
-            for (int p = 0; p < sgs.getNPlayers(); p++)
-                sgs.getRoleDeck().setVisibilityOfComponent(sgs.getCurrentPlayer(), p, true);
-        }
+        sgs.getDiscardDeck().add(deletedCard);
         sgs.getDiscardDeck().add(currentDeck.pick(idx));
         return true;
     }

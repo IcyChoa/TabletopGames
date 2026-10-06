@@ -50,7 +50,7 @@ public class SaboteurGameParameters extends TunableParameters<SaboteurGameParame
     //10	7	3
     //11    7	4
     public int[] saboteursForPlayerCount = new int[]{0, 0, 0, 1, 1, 2, 2, 3, 3, 3, 4};
-    public int[] minersForPlayerCount = new int[]{0, 0, 0, 3, 4, 4, 5, 5, 6, 7, 8};
+    public int[] minersForPlayerCount = new int[]{0, 0, 0, 3, 4, 4, 5, 5, 6, 7, 7};
     public int[] cardsPerPlayer = new int[]{0, 0, 0, 6, 6, 6, 5, 5, 4, 4, 4};
     public int[] goldSupply = new int[] {0, 16, 8, 4};
 

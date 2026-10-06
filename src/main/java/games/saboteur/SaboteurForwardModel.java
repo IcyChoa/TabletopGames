@@ -230,6 +230,7 @@ public class SaboteurForwardModel extends StandardForwardModel implements ITreeA
         //Check Each card in players deck
         //Switch Case for each type of card you would find in hand
         boolean consideredRockfall = false;
+        boolean consideredMap = false;
         for (int i = 0; i < currentPlayersDeck.getSize(); i++) {
             SaboteurCard card = currentPlayersDeck.peek(i);
             switch (card.type) {
@@ -250,6 +251,12 @@ public class SaboteurForwardModel extends StandardForwardModel implements ITreeA
                             break;
                         else
                             consideredRockfall = true;
+                    }
+                    if (actionCard.actionType == Map) {
+                        if (consideredMap)
+                            break;
+                        else
+                            consideredMap = true;
                     }
                     actions.addAll(computeActionAction((ActionCard) card, i, sgs));
                     break;
@@ -426,18 +433,16 @@ public class SaboteurForwardModel extends StandardForwardModel implements ITreeA
     }
 
     private List<AbstractAction> computeActionRockFall(SaboteurGameState sgs) {
-        RoleCard currentPlayersRole = (RoleCard) sgs.roleDeck.get(sgs.getCurrentPlayer());
         List<AbstractAction> actions = new ArrayList<>();
         for (int x = 0; x < sgs.gridBoard.getWidth(); x++) {
             for (int y = 0; y < sgs.gridBoard.getHeight(); y++) {
                 PathCard currentCard = (PathCard) sgs.gridBoard.getElement(x, y);
-                if (currentCard != null) {
-                    if (currentCard.type == PathCard.PathCardType.Path && currentPlayersRole.type == Saboteur) {
-                        actions.add(new PlayRockFallCard(sgs.gridBoard.getComponentID(), x, y));
-                    }
-                    if (currentCard.type == PathCard.PathCardType.Edge) {
-                        actions.add(new PlayRockFallCard(sgs.gridBoard.getComponentID(), x, y));
-                    }
+                if (currentCard == null) {
+                    continue;
+                }
+                if (currentCard.type == PathCard.PathCardType.Path
+                        || currentCard.type == PathCard.PathCardType.Edge) {
+                    actions.add(new PlayRockFallCard(sgs.gridBoard.getComponentID(), x, y));
                 }
             }
         }
@@ -464,7 +469,7 @@ public class SaboteurForwardModel extends StandardForwardModel implements ITreeA
 
         } else if (action instanceof PlayRockFallCard) {
             recalculatePathCardOptions(sgs);
-        } else if (action instanceof DoNothing) {
+        } else if (action instanceof DoNothing && allHandsEmpty(sgs)) {
             distributeSaboteurEarnings(sgs);
         }
         endPlayerTurn(sgs);
@@ -510,6 +515,15 @@ public class SaboteurForwardModel extends StandardForwardModel implements ITreeA
         setupRound(sgs, sgp);
     }
 
+    private boolean allHandsEmpty(SaboteurGameState sgs) {
+        for (Deck<SaboteurCard> hand : sgs.playerDecks) {
+            if (hand.getSize() > 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     //Distribute earnings for all saboteurs
     private void distributeSaboteurEarnings(SaboteurGameState sgs) {
         int targetNuggetValue = 0;
@@ -535,7 +549,7 @@ public class SaboteurForwardModel extends StandardForwardModel implements ITreeA
         sgs.lastRoundMinersWon = false;
         sgs.lastRoundResolved = true;
         SaboteurGameParameters sgp = (SaboteurGameParameters) sgs.getGameParameters();
-        if (sgp.singleRoundEpisode || sgs.getRoundCounter() > 2) {
+        if (sgp.singleRoundEpisode || sgs.getRoundCounter() > 1) {
             endGame(sgs);
             return;
         }
