@@ -62,7 +62,12 @@ public class SaboteurBoardView extends JComponent {
             for (int j = 0; j < board.getWidth(); j++) {
                 PathCard card = (PathCard) board.getElement(j, i);
                 int humanID = gui.getHumanPlayerIds().iterator().next();
-                if (card != null) drawPathCard((Graphics2D) g, card, panPos.x + j * cellWidth, panPos.y + i * cellHeight, board.getElementVisibility(j, i).get(humanID));
+                if (card != null) {
+                    boolean known = board.getElementVisibility(j, i).get(humanID);
+                    boolean faceUp = board.getElementVisibility(j, i).stream().allMatch(seen -> seen);
+                    boolean showExits = card.type != PathCard.PathCardType.Goal || faceUp;
+                    drawPathCard((Graphics2D) g, card, panPos.x + j * cellWidth, panPos.y + i * cellHeight, known, showExits);
+                }
                 if (gui.gridHighlight != null && gui.gridHighlight.x == j && gui.gridHighlight.y == i) {
                     g.setColor(Color.green);
                     g.drawRect(panPos.x + j * cellWidth, panPos.y + i * cellHeight, cellWidth, cellHeight);
@@ -72,6 +77,11 @@ public class SaboteurBoardView extends JComponent {
     }
 
     public static void drawPathCard (Graphics2D g, PathCard card, int pX, int pY, boolean visibility) {
+        boolean showExits = card.type != PathCard.PathCardType.Goal || visibility;
+        drawPathCard(g, card, pX, pY, visibility, showExits);
+    }
+
+    public static void drawPathCard (Graphics2D g, PathCard card, int pX, int pY, boolean visibility, boolean showExits) {
         int mX = pX + cellWidth/2;
         int mY = pY + cellHeight/2;
 
@@ -81,9 +91,12 @@ public class SaboteurBoardView extends JComponent {
         g.setColor(Color.black);
         g.drawRoundRect(pX, pY, cellWidth, cellHeight, 2, 2);
 
-        // Draw paths on card
+        // Draw paths on card. Face-down and Map-peeked goals keep their exits hidden.
         g.setColor(Color.gray);
         boolean[] dirs = card.getDirections();
+        if (!showExits) {
+            dirs = new boolean[]{false, false, false, false};
+        }
         if (card.type != PathCard.PathCardType.Edge) {
             if (dirs[0]) {
                 // North - center

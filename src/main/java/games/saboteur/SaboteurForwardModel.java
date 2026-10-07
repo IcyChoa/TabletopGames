@@ -41,9 +41,21 @@ public class SaboteurForwardModel extends StandardForwardModel implements ITreeA
 
         sgs.goalDeck = new Deck<>("GoalDeck", HIDDEN_TO_ALL);
         int treasures = sgp.nTreasures;
+        int coals = 0;
         for (int i = 0; i < sgp.nGoals; i++) {
-            sgs.goalDeck.add(new PathCard(PathCard.PathCardType.Goal, new boolean[]{true, true, true, true}, treasures > 0));
-            treasures--;
+            boolean treasure = treasures > 0;
+            boolean[] dirs;
+            if (treasure) {
+                dirs = new boolean[]{true, true, true, true};
+                treasures--;
+            } else if (coals++ % 2 == 0) {
+                // North + west. 180° rotation (swap 0/1 and 2/3) yields south + east.
+                dirs = new boolean[]{true, false, true, false};
+            } else {
+                // North + east. 180° rotation yields south + west.
+                dirs = new boolean[]{true, false, false, true};
+            }
+            sgs.goalDeck.add(new PathCard(PathCard.PathCardType.Goal, dirs, treasure));
         }
 
         sgs.drawDeck = new Deck<>("DrawDeck", HIDDEN_TO_ALL);
@@ -162,6 +174,11 @@ public class SaboteurForwardModel extends StandardForwardModel implements ITreeA
 
         for (SaboteurCard goalCard : sgs.goalDeck.getComponents()) {
             PathCard currentCard = (PathCard) goalCard;
+            // Goal cards are reused across rounds. Coal is turned 0°/180° when revealed;
+            // both official corners are stored with the north exit open.
+            if (!currentCard.hasTreasure() && !currentCard.getDirections()[0]) {
+                currentCard.rotate();
+            }
             int goalX = sgp.goalSpacingX + sgs.startingSquare.getX();
             sgs.gridBoard.setElement(goalX, startingY, currentCard);
             // Goals are face-down until revealed by a Map card or path connectivity
@@ -310,6 +327,10 @@ public class SaboteurForwardModel extends StandardForwardModel implements ITreeA
             if (neighborCard == null) {
                 continue;
             }
+            // A face-down goal (Map peek included) has unknown exits and does not constrain placement.
+            if (neighborCard.type == PathCard.PathCardType.Goal && !isGoalFaceUp(sgs, neighborX, neighborY)) {
+                continue;
+            }
             boolean[] neighbourDirections = neighborCard.getDirections();
             if (currentDirections[i] != neighbourDirections[neighborCard.getOppositeDirection(i)]) {
                 return false;
@@ -321,12 +342,17 @@ public class SaboteurForwardModel extends StandardForwardModel implements ITreeA
     //For when Rockfall card is played
     //Recalculate all possible path card options via recursion
     private void recalculatePathCardOptions(SaboteurGameState sgs) {
-        sgs.pathCardOptions.clear();
-        sgs.goalLocationsFound.clear();
-        recalculatePathCardOptionsRecursive(new HashSet<>(), sgs, sgs.startingSquare);
+        recalculatePathCardOptions(sgs, null);
     }
 
-    private void recalculatePathCardOptionsRecursive(Set<Vector2D> checkedLocations, SaboteurGameState sgs, Vector2D location) {
+    private void recalculatePathCardOptions(SaboteurGameState sgs, Vector2D justPlaced) {
+        sgs.pathCardOptions.clear();
+        sgs.goalLocationsFound.clear();
+        recalculatePathCardOptionsRecursive(new HashSet<>(), sgs, sgs.startingSquare, null, justPlaced);
+    }
+
+    private void recalculatePathCardOptionsRecursive(Set<Vector2D> checkedLocations, SaboteurGameState sgs,
+                                                     Vector2D location, Vector2D cameFrom, Vector2D justPlaced) {
         PathCard currentCard = (PathCard) sgs.gridBoard.getElement(location);
         checkedLocations.add(location);
         if (currentCard == null) {
@@ -339,23 +365,78 @@ public class SaboteurForwardModel extends StandardForwardModel implements ITreeA
                 || location.getY() >= sgs.gridBoard.getHeight()) {
             return; // out of bounds
         } else if (currentCard.type == PathCard.PathCardType.Goal) {
-            // we have found a goal
-            for (int i = 0; i < sgs.getNPlayers(); i++) {
-                sgs.gridBoard.setElementVisibility(location.getX(), location.getY(), i, true);
+            if (!isGoalFaceUp(sgs, location.getX(), location.getY())) {
+                Vector2D anchor = cameFrom;
+                if (justPlaced != null && cardFaces(sgs, justPlaced, location)) {
+                    anchor = justPlaced;
+                }
+                if (!currentCard.hasTreasure() && anchor != null) {
+                    orientCoalToward(currentCard, location, anchor);
+                }
+                for (int i = 0; i < sgs.getNPlayers(); i++) {
+                    sgs.gridBoard.setElementVisibility(location.getX(), location.getY(), i, true);
+                }
             }
             sgs.goalLocationsFound.add(location);
         }
 
-        //check adjacent cards for path card
+        // Face-up goals continue only through their real exits. A face-down goal is revealed above
+        // before this loop, so its pre-reveal exits are never walked.
         for (int i = 0; i < 4; i++) {
-            if (currentCard.getDirections()[i]) { // we can reach this space from currentCard
-                Vector2D offset = getCardOffset(i);
-                int neighborX = location.getX() + offset.getX();
-                int neighborY = location.getY() + offset.getY();
-                Vector2D neighborLocation = new Vector2D(neighborX, neighborY);
-                if (!checkedLocations.contains(neighborLocation))
-                    recalculatePathCardOptionsRecursive(checkedLocations, sgs, new Vector2D(neighborX, neighborY));
+            if (!currentCard.getDirections()[i]) {
+                continue;
             }
+            Vector2D offset = getCardOffset(i);
+            int neighborX = location.getX() + offset.getX();
+            int neighborY = location.getY() + offset.getY();
+            Vector2D neighborLocation = new Vector2D(neighborX, neighborY);
+            if (checkedLocations.contains(neighborLocation)) {
+                continue;
+            }
+            PathCard neighborCard = (PathCard) sgs.gridBoard.getElement(neighborX, neighborY);
+            if (neighborCard != null
+                    && !(neighborCard.type == PathCard.PathCardType.Goal && !isGoalFaceUp(sgs, neighborX, neighborY))
+                    && !neighborCard.getDirections()[neighborCard.getOppositeDirection(i)]) {
+                continue;
+            }
+            recalculatePathCardOptionsRecursive(checkedLocations, sgs, neighborLocation, location, justPlaced);
+        }
+    }
+
+    /** Visible to every player: path-reveal, not a private Map peek. */
+    private boolean isGoalFaceUp(SaboteurGameState sgs, int x, int y) {
+        for (int p = 0; p < sgs.getNPlayers(); p++) {
+            if (!sgs.gridBoard.getElementVisibility(x, y, p)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean cardFaces(SaboteurGameState sgs, Vector2D from, Vector2D to) {
+        int dir = directionIndex(from, to);
+        if (dir < 0) {
+            return false;
+        }
+        PathCard card = (PathCard) sgs.gridBoard.getElement(from);
+        return card != null && card.getDirections()[dir];
+    }
+
+    /** 0 north, 1 south, 2 west, 3 east. -1 if the cells are not orthogonal neighbours. */
+    private int directionIndex(Vector2D from, Vector2D to) {
+        int dx = to.getX() - from.getX();
+        int dy = to.getY() - from.getY();
+        if (dx == 0 && dy == -1) return 0;
+        if (dx == 0 && dy == 1) return 1;
+        if (dx == -1 && dy == 0) return 2;
+        if (dx == 1 && dy == 0) return 3;
+        return -1;
+    }
+
+    private void orientCoalToward(PathCard coal, Vector2D goal, Vector2D anchor) {
+        int dir = directionIndex(goal, anchor);
+        if (dir >= 0 && !coal.getDirections()[dir]) {
+            coal.rotate();
         }
     }
 
@@ -459,8 +540,8 @@ public class SaboteurForwardModel extends StandardForwardModel implements ITreeA
         if (sgs.drawDeck.getSize() != 0) {
             currentDeck.add(sgs.drawDeck.draw());
         }
-        if (action instanceof PlacePathCard) {
-            recalculatePathCardOptions(sgs);
+        if (action instanceof PlacePathCard placed) {
+            recalculatePathCardOptions(sgs, new Vector2D(placed.getX(), placed.getY()));
             boolean treasureFound = sgs.goalLocationsFound.stream()
                     .map(loc -> (PathCard) sgs.gridBoard.getElement(loc))
                     .filter(Objects::nonNull).anyMatch(PathCard::hasTreasure);

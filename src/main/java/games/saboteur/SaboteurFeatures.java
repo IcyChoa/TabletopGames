@@ -29,6 +29,9 @@ import java.util.Set;
  * Hand path cards are one-hot over a fixed shape catalog (9 Edge + 7 Path) plus a single
  * {@code flipped} bit (0 = catalog orientation, 1 = 180° rotate). Board cells keep 4
  * connectivity bits (U/D/L/R exits) — those are geometry, not hand rotation.
+ * Goal exits are written only once the card is face up for every player. A hidden goal is
+ * {@code goalUnknown} with no exits. A Map peek sets {@code goalGold} or {@code goalEmpty}
+ * and still omits exits, because coal orientation is chosen only when the card is revealed.
  */
 public class SaboteurFeatures implements IStateFeatureVector {
 
@@ -220,10 +223,14 @@ public class SaboteurFeatures implements IStateFeatureVector {
                                 setBoard(v, CH_GOAL_UNKNOWN, y, x, 1.0);
                             } else if (card.hasTreasure()) {
                                 setBoard(v, CH_GOAL_GOLD, y, x, 1.0);
-                                writeDirs(v, y, x, card.getDirections());
+                                if (goalFaceUp(grid, x, y, sgs.getNPlayers())) {
+                                    writeDirs(v, y, x, card.getDirections());
+                                }
                             } else {
                                 setBoard(v, CH_GOAL_EMPTY, y, x, 1.0);
-                                writeDirs(v, y, x, card.getDirections());
+                                if (goalFaceUp(grid, x, y, sgs.getNPlayers())) {
+                                    writeDirs(v, y, x, card.getDirections());
+                                }
                             }
                         }
                     }
@@ -233,6 +240,15 @@ public class SaboteurFeatures implements IStateFeatureVector {
                 }
             }
         }
+    }
+
+    private boolean goalFaceUp(PartialObservableGridBoard grid, int x, int y, int nPlayers) {
+        for (int p = 0; p < nPlayers; p++) {
+            if (!grid.getElementVisibility(x, y, p)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private void writeDirs(double[] v, int y, int x, boolean[] dirs) {

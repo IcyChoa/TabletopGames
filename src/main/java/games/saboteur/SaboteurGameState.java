@@ -177,26 +177,26 @@ public class SaboteurGameState extends AbstractGameState {
                 }
             }
 
-            // Goals on board, shuffle those unseen by current player
+            // Permute goal cards this player has not seen. Revealed and Map-peeked goals stay
+            // on their cells, coal orientation included. goalDeck itself is left as the round's
+            // three cards so a later round reset does not deal duplicates.
+            List<SaboteurCard> unseenGoals = new ArrayList<>();
+            List<Vector2D> unseenCells = new ArrayList<>();
             for (int i = 0; i < gridBoard.getHeight(); i++) {
                 for (int j = 0; j < gridBoard.getWidth(); j++) {
                     PathCard c = (PathCard) gridBoard.getElement(j, i);
                     if (c == null || c.type != PathCard.PathCardType.Goal) continue;
                     if (!copy.gridBoard.getElementVisibility(j, i, playerId)) {
-                        copy.goalDeck.add((SaboteurCard) copy.gridBoard.getElement(j, i));
+                        unseenGoals.add((SaboteurCard) copy.gridBoard.getElement(j, i));
+                        unseenCells.add(new Vector2D(j, i));
                     }
                 }
             }
-            if (copy.goalDeck.getSize() > 0) {
-                copy.goalDeck.shuffle(redeterminisationRnd);
-                for (int i = 0; i < gridBoard.getHeight(); i++) {
-                    for (int j = 0; j < gridBoard.getWidth(); j++) {
-                        PathCard c = (PathCard) gridBoard.getElement(j, i);
-                        if (c == null || c.type != PathCard.PathCardType.Goal) continue;
-                        if (!copy.gridBoard.getElementVisibility(j, i, playerId)) {
-                            copy.gridBoard.setElement(j, i, copy.goalDeck.pick(0));
-                        }
-                    }
+            if (unseenGoals.size() > 1) {
+                Collections.shuffle(unseenGoals, redeterminisationRnd);
+                for (int k = 0; k < unseenCells.size(); k++) {
+                    Vector2D cell = unseenCells.get(k);
+                    copy.gridBoard.setElement(cell.getX(), cell.getY(), unseenGoals.get(k));
                 }
             }
 
