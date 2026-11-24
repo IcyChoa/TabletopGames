@@ -216,6 +216,14 @@ public class PyTAG {
         else throw new Exception("Observation vectoriser function is not implemented");
     }
 
+    public double[] getObservationVectorFor(int playerId) throws Exception {
+        AbstractGameState gs = gameState.copy(playerId);
+        if (stateVectoriser != null){
+            return stateVectoriser.doubleVector(gs, playerId);
+        }
+        else throw new Exception("Observation vectoriser function is not implemented");
+    }
+
     // Gets the action space size as an integer
     public int getActionSpace(){
         return leaves.size();
@@ -257,8 +265,22 @@ public class PyTAG {
     // --End of Wrapper Functions--
 
     public void reset(){
+        resetGame(null);
+    }
+
+    /**
+     * Reset and deal the game from {@code gameSeed}, so the same seed always deals the same game.
+     * {@link #reset()} instead takes its seed from a chain that advances every episode, so a
+     * deal there depends on how many episodes came before it.
+     */
+    public void resetWithSeed(long gameSeed){
+        resetGame(gameSeed);
+    }
+
+    private void resetGame(Long gameSeed){
         // Reset game instance, run built-in agents until a python agent is required to make a decision
-        this.game.reset(players);
+        if (gameSeed == null) this.game.reset(players);
+        else this.game.reset(players, gameSeed);
         this.turnPause = 0;
         this.tick = 0;
         this.game.setTurnPause(turnPause);
